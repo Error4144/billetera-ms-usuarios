@@ -1,0 +1,35 @@
+name: CI de ms-usuarios
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+      - run: go mod download
+      - run: go vet ./...
+      - run: go build ./...
+      - run: go test ./...
+      - name: Validar configuración de ejemplo
+        run: |
+          set -a
+          source .env.example
+          set +a
+          go run ./cmd/ms-usuarios
+      - name: Construir imagen de verificación
+        run: docker build --tag billetera-ms-usuarios:ci .
