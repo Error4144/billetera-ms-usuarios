@@ -13,6 +13,19 @@ jobs:
   verify:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:17.12-bookworm
+        env:
+          POSTGRES_DB: billetera_usuarios_test
+          POSTGRES_USER: test_usuarios
+          POSTGRES_PASSWORD: ci-only-test-password
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U test_usuarios -d billetera_usuarios_test"
+          --health-interval 5s --health-timeout 3s --health-retries 12
+    env:
+      USUARIOS_TEST_DATABASE_URL: postgresql://test_usuarios:ci-only-test-password@127.0.0.1:5432/billetera_usuarios_test?sslmode=disable
     steps:
       - uses: actions/checkout@v6
         with:
@@ -24,12 +37,17 @@ jobs:
       - run: go mod download
       - run: go vet ./...
       - run: go build ./...
-      - run: go test ./...
+      - name: Pruebas unitarias e integración con PostgreSQL
+        run: go test -coverpkg=./internal/...,./migrations -coverprofile=coverage.out ./...
+      - name: Cobertura mínima de aplicación
+        run: |
+          go tool cover -func=coverage.out
+          go tool cover -func=coverage.out | awk '/^total:/ { gsub("%", "", $3); found=1; if ($3+0 < 60) exit 1 } END { if (!found) exit 1 }'
       - name: Validar configuración de ejemplo
         run: |
           set -a
           source .env.example
           set +a
-          go run ./cmd/ms-usuarios
+          go run ./cmd/ms-usuarios --check-config
       - name: Construir imagen de verificación
         run: docker build --tag billetera-ms-usuarios:ci .

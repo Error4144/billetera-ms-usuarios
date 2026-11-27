@@ -1,0 +1,88 @@
+syntax = "proto3";
+
+package billetera.usuarios.v1;
+
+option go_package = "billetera.local/ms-usuarios/gen/billetera/usuarios/v1;usuariosv1";
+
+import "google/protobuf/empty.proto";
+import "google/protobuf/timestamp.proto";
+
+// BORRADOR: revisar con el BFF antes de implementar o publicar clientes.
+// Todos los RPC requieren identidad de servicio autorizada.
+// Los RPC propios usan authorization: Bearer <token> en metadatos.
+// RegisterUser y Login no requieren una sesión previa de usuario.
+service UsersService {
+  rpc RegisterUser(RegisterUserRequest) returns (RegisterUserResponse);
+  rpc Login(LoginRequest) returns (LoginResponse);
+  rpc ValidateSession(google.protobuf.Empty) returns (SessionIdentity);
+  rpc Logout(google.protobuf.Empty) returns (google.protobuf.Empty);
+  rpc GetProfile(google.protobuf.Empty) returns (UserProfile);
+  rpc UpdateProfile(UpdateProfileRequest) returns (UserProfile);
+  rpc GetPreferences(google.protobuf.Empty) returns (UserPreferences);
+  rpc UpdatePreferences(UpdatePreferencesRequest) returns (UserPreferences);
+}
+
+message RegisterUserRequest {
+  string email = 1;
+  string password = 2;
+  string display_name = 3;
+}
+
+// El registro asigna preferencias en el servidor y no inicia sesión.
+message RegisterUserResponse {
+  UserProfile profile = 1;
+  UserPreferences preferences = 2;
+}
+
+message LoginRequest {
+  string email = 1;
+  string password = 2;
+}
+
+message LoginResponse {
+  // Se entrega únicamente al BFF por canal protegido. No exponer en GraphQL/logs.
+  string session_token = 1;
+  SessionIdentity session = 2;
+}
+
+// Solo se devuelve tras validar vigencia y revocación de la sesión.
+message SessionIdentity {
+  string user_id = 1;
+  string session_id = 2;
+  // Menor entre vencimiento absoluto y vencimiento por inactividad vigente.
+  google.protobuf.Timestamp expires_at = 3;
+}
+
+message UserProfile {
+  string id = 1;
+  string email = 2;
+  string display_name = 3;
+  google.protobuf.Timestamp created_at = 4;
+  google.protobuf.Timestamp updated_at = 5;
+  // Versión positiva; decodificar int64 sin pérdida de precisión en TypeScript.
+  int64 version = 6;
+}
+
+message UpdateProfileRequest {
+  string display_name = 1;
+  int64 expected_version = 2;
+}
+
+message UserPreferences {
+  string currency = 1; // CLP en la primera entrega.
+  string time_zone = 2; // Identificador IANA validado por el servicio.
+  int64 micro_expense_maximum_amount = 3; // Pesos enteros positivos, RN-01.
+  int32 micro_expense_minimum_count = 4;
+  int64 version = 5;
+  google.protobuf.Timestamp updated_at = 6;
+}
+
+// Reemplaza el bloque completo. No admite cambios de propietario ni de versión
+// asignada por el servidor. expected_version debe coincidir con la vigente.
+message UpdatePreferencesRequest {
+  int64 expected_version = 1;
+  string currency = 2;
+  string time_zone = 3;
+  int64 micro_expense_maximum_amount = 4;
+  int32 micro_expense_minimum_count = 5;
+}

@@ -1,0 +1,98 @@
+name: billetera-usuarios-dev
+services:
+  bff:
+    image: billetera-bff-graphql:local
+    build: ../billetera-bff-graphql
+    environment:
+      BFF_PORT: '3000'
+      BFF_PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:-http://127.0.0.1:8080}
+      SESSION_COOKIE_SECURE: 'false'
+      GRPC_USUARIOS_ADDRESS: ms-usuarios:50051
+      GRPC_TRANSACCIONES_ADDRESS: ms-transacciones:50052
+      GRPC_NOTIFICACIONES_ADDRESS: ms-notificaciones:50053
+      GRPC_AGENTE_ADDRESS: ms-agente-mcp:50054
+      GRPC_USUARIOS_TLS_CA_FILE: /certs/ca.crt
+      GRPC_USUARIOS_TLS_CERT_FILE: /certs/bff.crt
+      GRPC_USUARIOS_TLS_KEY_FILE: /certs/bff.key
+    volumes:
+      - ./.local-certs/bff.crt:/certs/bff.crt:ro
+      - ./.local-certs/bff.key:/certs/bff.key:ro
+      - ./.local-certs/ca.crt:/certs/ca.crt:ro
+    depends_on:
+      ms-usuarios:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:3000/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 4s
+      retries: 12
+  frontend:
+    image: billetera-frontend:integration-local
+    build:
+      context: ../billetera-frontend
+      args:
+        VITE_DATA_MODE: integration
+    ports:
+      - '127.0.0.1:${FRONTEND_PORT:-8080}:8080'
+    depends_on:
+      bff:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD, wget, -qO-, 'http://127.0.0.1:8080/healthz']
+      interval: 5s
+      timeout: 3s
+      retries: 12
+  ms-usuarios:
+    image: billetera-ms-usuarios:local
+    build: .
+    environment:
+      GRPC_PORT: '50051'
+      SESSION_TTL: ${SESSION_TTL:-24h}
+      SESSION_IDLE_TIMEOUT: ${SESSION_IDLE_TIMEOUT:-30m}
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: '5432'
+      POSTGRES_DB: ${POSTGRES_DB:?define POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER:?define POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?define POSTGRES_PASSWORD}
+      POSTGRES_SSLMODE: disable
+      KAFKA_BROKERS: kafka:9092
+      GRPC_TLS_CERT_FILE: /certs/server.crt
+      GRPC_TLS_KEY_FILE: /certs/server.key
+      GRPC_TLS_CA_FILE: /certs/ca.crt
+      GRPC_HEALTH_CERT_FILE: /certs/health.crt
+      GRPC_HEALTH_KEY_FILE: /certs/health.key
+    ports:
+      - '127.0.0.1:${GRPC_PORT:-50051}:50051'
+    volumes:
+      - ./.local-certs/server.crt:/certs/server.crt:ro
+      - ./.local-certs/server.key:/certs/server.key:ro
+      - ./.local-certs/ca.crt:/certs/ca.crt:ro
+      - ./.local-certs/health.crt:/certs/health.crt:ro
+      - ./.local-certs/health.key:/certs/health.key:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD, /ms-usuarios, --healthcheck]
+      interval: 5s
+      timeout: 4s
+      start_period: 10s
+      retries: 12
+  postgres:
+    image: postgres:17.12-bookworm
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:?define POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER:?define POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?define POSTGRES_PASSWORD}
+      POSTGRES_HOST_AUTH_METHOD: scram-sha-256
+    ports:
+      - '127.0.0.1:${POSTGRES_PORT:-55431}:5432'
+    volumes:
+      - usuarios-data:/var/lib/postgresql/data
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -h 127.0.0.1 -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"']
+      interval: 3s
+      timeout: 3s
+      retries: 20
+volumes:
+  usuarios-data:

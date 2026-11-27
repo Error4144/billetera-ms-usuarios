@@ -1,5 +1,7 @@
 /bin/
 /coverage.out
+/.local-certs/
+/.test-results/
 .env
 .env.*
 !.env.example

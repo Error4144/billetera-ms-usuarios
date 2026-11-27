@@ -5,6 +5,12 @@
 !cmd/**
 !internal/
 !internal/**
+!migrations/
+!migrations/**
+!gen/
+!gen/**
+!tests/
+!tests/**
 **/.env
 **/.env.*
 **/*.key
